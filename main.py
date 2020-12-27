@@ -1,0 +1,86 @@
+from detecto import core, utils
+import generate_trimaps
+import matting
+import numpy as np
+import cv2
+import os
+
+
+def read_image(name):
+    return (cv2.imread(name) / 255.0)[:, :, ::-1]
+
+
+def read_trimap(name):
+    trimap_im = cv2.imread(name, 0) / 255.0
+    h, w = trimap_im.shape
+    trimap = np.zeros((h, w, 2))
+    trimap[trimap_im == 1, 1] = 1
+    trimap[trimap_im == 0, 0] = 1
+    return trimap
+
+
+def get_object_box(image, object_name):
+    model = core.Model()
+    labels, boxes, _ = model.predict_top(image)
+    if object_name in labels:
+        idx = labels.index(object_name)
+        return boxes[idx]
+    else:
+        return None
+
+
+def get_cropped_box(image, label):
+    box = get_object_box(image, label)
+    if box is not None:
+        box = list(map(lambda x: round(float(x)), box))
+        x_min, y_min, x_max, y_max = box
+        return image[y_min:y_max, x_min:x_max]
+    else:
+        return None
+
+
+def swap_bg(image, alpha):
+    green_bg = np.full_like(image, 255).astype(np.float32)
+
+    alpha = alpha[:, :, np.newaxis]
+    result = alpha * image.astype(np.float32) + (1 - alpha) * green_bg
+    result = np.clip(result, 0, 255).astype(np.uint8)
+
+    return result
+
+
+def main():
+    image = utils.read_image('2.jpg')
+    cropped = get_cropped_box(image, 'cat')
+    cv2.imwrite(
+        os.path.join('.', "_cropped.png"),
+        cv2.cvtColor(cropped, cv2.COLOR_RGB2BGR)
+    )
+    trimap = generate_trimaps.get_trimap(cropped, 'cat', 0.9)
+    cv2.imwrite(
+        os.path.join('.', "_trimap.png"),
+        cv2.cvtColor(trimap, cv2.COLOR_RGB2BGR)
+    )
+    img = read_image("_cropped.png")
+    trimap = read_trimap("_trimap.png")
+
+    fg, bg, alpha = matting.perform_matting(img, trimap)
+    cv2.imwrite(
+        os.path.join('.', "_fg.png"),
+        fg[:, :, ::-1] * 255,
+    )
+    cv2.imwrite(
+        os.path.join('.', "_bg.png"),
+        bg[:, :, ::-1] * 255,
+    )
+    cv2.imwrite(
+        os.path.join('.', "_alpha.png"), alpha * 255,
+    )
+    example_swap_bg = swap_bg(fg[:, :, ::-1] * 255, alpha)
+    cv2.imwrite(
+        os.path.join('.', "_swapped_bg.png"), example_swap_bg,
+    )
+
+
+if __name__ == '__main__':
+    main()

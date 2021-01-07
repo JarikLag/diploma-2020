@@ -3,7 +3,8 @@ import generate_trimaps
 import matting
 import numpy as np
 import cv2
-import os
+from os import listdir
+from os.path import join, isfile, basename
 
 
 def read_image(name):
@@ -49,38 +50,55 @@ def swap_bg(image, alpha):
     return result
 
 
-def main():
-    image = utils.read_image('2.jpg')
-    cropped = get_cropped_box(image, 'cat')
+def process_image(dirname, image_path, label):
+    image_name = basename(image_path)
+    image = utils.read_image(image_path)
+    cropped = get_cropped_box(image, label)
+    if cropped is None:
+        return
     cv2.imwrite(
-        os.path.join('.', "_cropped.png"),
+        join('.', '_cropped.png'),
         cv2.cvtColor(cropped, cv2.COLOR_RGB2BGR)
     )
-    trimap = generate_trimaps.get_trimap(cropped, 'cat', 0.9)
+    dil = 10
+    ero = 5
+    conf_thred = 0.9
+    print(f'Processing image {image_path}')
+    trimap = generate_trimaps.get_trimap(cropped, label, dil, ero, conf_thred)
     cv2.imwrite(
-        os.path.join('.', "_trimap.png"),
+        join(dirname, f'{image_name}_trimap.png'),
         cv2.cvtColor(trimap, cv2.COLOR_RGB2BGR)
     )
-    img = read_image("_cropped.png")
-    trimap = read_trimap("_trimap.png")
+    img = read_image('_cropped.png')
+    trimap = read_trimap(join(dirname, f'{image_name}_trimap.png'))
 
     fg, bg, alpha = matting.perform_matting(img, trimap)
     cv2.imwrite(
-        os.path.join('.', "_fg.png"),
+        join(dirname, f'{image_name}_fg.png'),
         fg[:, :, ::-1] * 255,
     )
     cv2.imwrite(
-        os.path.join('.', "_bg.png"),
+        join(dirname, f'{image_name}_bg.png'),
         bg[:, :, ::-1] * 255,
     )
     cv2.imwrite(
-        os.path.join('.', "_alpha.png"), alpha * 255,
+        join(dirname, f'{image_name}_alpha.png'), alpha * 255,
     )
     example_swap_bg = swap_bg(fg[:, :, ::-1] * 255, alpha)
     cv2.imwrite(
-        os.path.join('.', "_swapped_bg.png"), example_swap_bg,
+        join(dirname, f'{image_name}_swapped_bg.png'), example_swap_bg,
     )
 
 
+def main(label):
+    dirname = join('test_images', f'{label}')
+    save_dir = join('results', f'{label}')
+    files = [join(dirname, f) for f in listdir(dirname) if isfile(join(dirname, f))]
+    for file in files:
+        process_image(save_dir, file, label)
+
+
 if __name__ == '__main__':
-    main()
+    labels = ['sofa', 'cat', 'car']
+    for lbl in labels:
+        main(lbl)
